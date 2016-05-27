@@ -2,6 +2,7 @@ package fork.ch.movieencodingfromview;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
@@ -15,7 +16,6 @@ import android.os.Environment;
 import android.support.annotation.NonNull;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
 
 import java.io.File;
 import java.io.IOException;
@@ -53,42 +53,37 @@ public class MediaCodevVideoExporter {
     private int mEncodingFrameCounter;
     private int mColorFormat;
     private InputSurface mInputSurface;
-
     private Bitmap mBitmap;
 
     public MediaCodevVideoExporter(Context context) {
         this.context = context;
     }
 
+
     @NonNull
-    void createVideoUsingMediaCodec(TextView theView) throws IOException, InterruptedException {
+    void createVideoUsingMediaCodec(View theView) throws IOException, InterruptedException {
 
         long start = System.currentTimeMillis();
 
-        File file = new File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "test.mp4");
+        File file = new File(Environment.getExternalStorageDirectory(), "test.mp4");
 
-        boolean useSurface = true;
-        prepareEncoder(file, theView, useSurface);
+        prepareEncoder(file, theView);
 
         mBitmap = Bitmap.createBitmap(theView.getWidth(),
                 theView.getHeight(), Bitmap.Config.ARGB_8888);
 
 
+
         int measurementIndex = 0;
-        Thread thread = startMuxerThread(file);
+        Thread thread = startMuxerThread();
 
         // loop over all measurements
         for (measurementIndex = 0; measurementIndex < 5; measurementIndex++) {
-            if (useSurface) {
-                encodeMeasurementWithInputSurface(theView, measurementIndex);
-
-            }
+            encodeMeasurementWithInputSurface(theView, measurementIndex);
         }
 
 
-        if (useSurface) {
-            mEncoder.signalEndOfInputStream();
-        }
+        mEncoder.signalEndOfInputStream();
 
         Timber.i("successfully queued all measurements for encoding");
 
@@ -99,7 +94,7 @@ public class MediaCodevVideoExporter {
         mBitmap.recycle();
     }
 
-    private void prepareEncoder(File file, View theView, boolean useSurface) throws IOException {
+    private void prepareEncoder(File file, View theView) throws IOException {
         mCodecInfo = selectCodec(MIME_TYPE);
         boolean variableBitRateSupported = false;
 
@@ -116,18 +111,8 @@ public class MediaCodevVideoExporter {
         }
         Timber.d("found codec: %s", mCodecInfo.getName());
 
-        if (useSurface) {
-            mColorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface;
-            Timber.d("surface : %d", mColorFormat);
-        } else {
-
-            mColorFormat = selectColorFormat(mCodecInfo, MIME_TYPE);
-            if (mColorFormat == 0) {
-                throw new IllegalStateException(
-                        "unable to find a colorformat suitable for encoding");
-            }
-            Timber.d("found colorFormat: %d", mColorFormat);
-        }
+        mColorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface;
+        Timber.d("surface : %d", mColorFormat);
 
         mWidth = theView.getWidth();
         mHeight = theView.getHeight();
@@ -151,9 +136,7 @@ public class MediaCodevVideoExporter {
         mEncodingFrameCounter = 0;
         mEncoder = MediaCodec.createByCodecName(mCodecInfo.getName());
         mEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-        if (useSurface) {
-            mInputSurface = new InputSurface(mEncoder.createInputSurface(), mWidth, mHeight);
-        }
+        mInputSurface = new InputSurface(mEncoder.createInputSurface(), mWidth, mHeight);
         mEncoder.start();
 
 
@@ -164,7 +147,7 @@ public class MediaCodevVideoExporter {
         mMuxerStarted = false;
     }
 
-    private Thread startMuxerThread(File file) {
+    private Thread startMuxerThread() {
         Thread thread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -182,13 +165,20 @@ public class MediaCodevVideoExporter {
 
         for (int i = 0; i < DUPLICATED_MEASUREMENT_FRAMES_PER_SECOND_IN_VIDEO; i++) {
             mInputSurface.makeCurrent();
-//            Canvas canvas1 = new Canvas(mBitmap);
-//            theView.draw(canvas1);
+            Canvas canvas1 = new Canvas(mBitmap);
+            theView.draw(canvas1);
 
+            Bitmap bitmap = BitmapFactory.decodeResource(context.getResources(), R.mipmap.ic_launcher);
 
-                        generateSurfaceFrame(measurementIndex);
+//
+//            generateSurfaceFrame(measurementIndex);
             //loadBitmapAsTexture(mBitmap);
 //            mInputSurface.drawFrame();
+            RendererUtils.RenderContext program = RendererUtils.createProgram();
+            int texture = RendererUtils.createTexture(mBitmap);
+            RendererUtils.renderBackground(1,0,0);
+
+            RendererUtils.renderTexture(program, texture, mWidth, mHeight);
 
 //            if (mInputSurface.getSurface().isValid()) {
 //                Canvas canvas = mInputSurface.getSurface().lockCanvas(new Rect(0, 0, mWidth, mHeight));
@@ -207,13 +197,13 @@ public class MediaCodevVideoExporter {
             mInputSurface.setPresentationTime(computePresentationTime() * 1000);
             mInputSurface.swapBuffers();
             mEncodingFrameCounter++;
+            bitmap.recycle();
         }
 
         Timber.i("queued encoding frame %d", measurementIndex);
 
 
     }
-
 
     private void loadBitmapAsTexture(Bitmap bitmap) {
         int[] textures = new int[1];
@@ -371,7 +361,6 @@ public class MediaCodevVideoExporter {
         return mEncodingFrameCounter * (ONE_SECOND_IN_MICROSECONDS / DUPLICATED_MEASUREMENT_FRAMES_PER_SECOND_IN_VIDEO);
     }
 
-
     private void encodeMeasurementFrame(byte[] frameData, long presentationTime) {
         int inputBufIndex = mEncoder.dequeueInputBuffer(TIMEOUT_USEC);
         while (inputBufIndex != 0) {
@@ -496,10 +485,14 @@ public class MediaCodevVideoExporter {
         GLES20.glClearColor(TEST_R0 / 255.0f, TEST_G0 / 255.0f, TEST_B0 / 255.0f, 1.0f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
         GLES20.glEnable(GLES20.GL_SCISSOR_TEST);
-        GLES20.glScissor(0, 0, mWidth , mHeight );
+        GLES20.glScissor(0, 0, mWidth, mHeight);
         GLES20.glClearColor(TEST_R1 / 255.0f, TEST_G1 / 255.0f, TEST_B1 / 255.0f, 1.0f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+
+
+
     }
+
 
     // untested function
     private byte[] getNV21(int inputWidth, int inputHeight, Bitmap bitmap) {

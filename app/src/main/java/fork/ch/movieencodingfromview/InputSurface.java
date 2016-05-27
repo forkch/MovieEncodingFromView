@@ -245,8 +245,6 @@ class InputSurface {
 
     public void drawFrame() {
 
-
-
         // clear Screen and Depth Buffer, we have set the clear color as black.
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
@@ -279,9 +277,9 @@ class InputSurface {
     {
         // We have to create the vertices of our triangle.
         vertices = new float[]
-                {10.0f, 200f, 0.0f,
-                        10.0f, 100f, 0.0f,
-                        100f, 100f, 0.0f,
+                {0f,0f, 0.0f,
+                        mScreenWidth, 0f, 0.0f,
+                        mScreenWidth,mScreenHeight, 0.0f,
                 };
 
         indices = new short[] {0, 1, 2}; // The order of vertexrendering.
